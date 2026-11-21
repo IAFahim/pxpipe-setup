@@ -1,0 +1,112 @@
+{
+  "proxy": {
+    "host": "127.0.0.1",
+    "mainPort": 47821,
+    "chatgptPort": 47822,
+    "maxRequestBytes": 67108864
+  },
+  "agents": [
+    {
+      "command": "agy",
+      "alias": "pagy",
+      "description": "Antigravity CLI (Google CloudCode PA / Gemini 4 & 3.x)",
+      "yoloFlags": ["--dangerously-skip-permissions"],
+      "conflictFlags": ["--dangerously-skip-permissions"],
+      "routes": [
+        "cloudcode-pa.googleapis.com/v1internal:streamGenerateContent*=http://127.0.0.1:47821",
+        "cloudcode-pa.googleapis.com/v1internal:generateContent*=http://127.0.0.1:47821"
+      ],
+      "needsPorts": [47821]
+    },
+    {
+      "command": "claude",
+      "alias": "pclaude",
+      "description": "Claude Code (Anthropic Messages)",
+      "yoloFlags": ["--dangerously-skip-permissions"],
+      "conflictFlags": ["--dangerously-skip-permissions", "--permission-mode", "--allow-dangerously-skip-permissions"],
+      "routes": [],
+      "needsPorts": [47821]
+    },
+    {
+      "command": "codex",
+      "alias": "pcodex",
+      "description": "OpenAI Codex CLI (ChatGPT OAuth + OpenAI Responses)",
+      "yoloFlags": ["--yolo"],
+      "conflictFlags": ["--yolo", "--dangerously-bypass-approvals-and-sandbox", "--approve-for-me", "-a", "--ask-for-approval"],
+      "routes": [
+        "chatgpt.com/backend-api/codex/responses*=http://127.0.0.1:47822",
+        "api.openai.com/v1/responses*=http://127.0.0.1:47821"
+      ],
+      "needsPorts": [47821, 47822]
+    },
+    {
+      "command": "omp",
+      "alias": "pomp",
+      "description": "Oh My Pi CLI (Anthropic / OpenAI / Google)",
+      "yoloFlags": ["--auto-approve"],
+      "conflictFlags": ["--auto-approve", "--yolo", "--approval-mode"],
+      "routes": [
+        "api.openai.com/v1/responses*=http://127.0.0.1:47821",
+        "api.openai.com/v1/chat/completions*=http://127.0.0.1:47821",
+        "chatgpt.com/backend-api/codex/responses*=http://127.0.0.1:47822",
+        "cloudcode-pa.googleapis.com/v1internal:streamGenerateContent*=http://127.0.0.1:47821",
+        "cloudcode-pa.googleapis.com/v1internal:generateContent*=http://127.0.0.1:47821"
+      ],
+      "needsPorts": [47821, 47822]
+    },
+    {
+      "command": "opencode",
+      "alias": "popencode",
+      "description": "OpenCode CLI",
+      "yoloFlags": ["--auto"],
+      "conflictFlags": ["--auto"],
+      "routes": [
+        "api.openai.com/v1/responses*=http://127.0.0.1:47821",
+        "api.openai.com/v1/chat/completions*=http://127.0.0.1:47821"
+      ],
+      "needsPorts": [47821]
+    },
+    {
+      "command": "gemini",
+      "alias": "pgemini",
+      "description": "Gemini CLI (Google AI Studio)",
+      "yoloFlags": ["--yolo"],
+      "conflictFlags": ["--yolo", "--approval-mode"],
+      "routes": [],
+      "needsPorts": [47821]
+    },
+    {
+      "command": "cursor-agent",
+      "alias": "pcursor-agent",
+      "description": "Cursor Agent CLI",
+      "yoloFlags": ["--yolo", "--trust"],
+      "conflictFlags": ["--yolo"],
+      "routes": [],
+      "needsPorts": [47821]
+    },
+    {
+      "command": "kilo",
+      "alias": "pkilo",
+      "description": "Kilo Code CLI",
+      "yoloFlags": ["--auto"],
+      "conflictFlags": ["--auto"],
+      "routes": [
+        "api.openai.com/v1/responses*=http://127.0.0.1:47821",
+        "api.openai.com/v1/chat/completions*=http://127.0.0.1:47821"
+      ],
+      "needsPorts": [47821]
+    },
+    {
+      "command": "pi",
+      "alias": "ppi",
+      "description": "Pi coding agent CLI",
+      "yoloFlags": [],
+      "conflictFlags": [],
+      "routes": [
+        "api.openai.com/v1/responses*=http://127.0.0.1:47821",
+        "api.openai.com/v1/chat/completions*=http://127.0.0.1:47821"
+      ],
+      "needsPorts": [47821]
+    }
+  ]
+}

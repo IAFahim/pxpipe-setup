@@ -1,0 +1,15 @@
+[Unit]
+Description=pxpipe local token-saving proxy and dashboard
+After=network-online.target
+
+[Service]
+Type=simple
+Environment=PORT=47821
+Environment=HOST=127.0.0.1
+Environment=PXPIPE_MAX_REQUEST_BYTES=67108864
+ExecStart=%h/.local/bin/pxpipe
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=default.target

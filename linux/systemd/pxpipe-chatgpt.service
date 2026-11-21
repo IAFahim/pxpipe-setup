@@ -1,0 +1,17 @@
+[Unit]
+Description=pxpipe ChatGPT Codex proxy (OPENAI_UPSTREAM=https://chatgpt.com)
+After=network-online.target
+
+[Service]
+Type=simple
+Environment=PORT=47822
+Environment=HOST=127.0.0.1
+Environment=OPENAI_UPSTREAM=https://chatgpt.com
+Environment=PXPIPE_SESSION_STATE=%h/.pxpipe/session-state-chatgpt.json
+Environment=PXPIPE_MAX_REQUEST_BYTES=67108864
+ExecStart=%h/.local/bin/pxpipe
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=default.target

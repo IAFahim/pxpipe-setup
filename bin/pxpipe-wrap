@@ -1,0 +1,170 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+CONFIG_DIR="${PXPIPE_SETUP_CONFIG_DIR:-$HOME/.config/pxpipe-setup}"
+AGENTS_TSV="$CONFIG_DIR/agents.tsv"
+PXPIPE_BIN="${PXPIPE_BIN:-$HOME/.local/bin/pxpipe}"
+STATE_DIR="${PXPIPE_STATE_DIR:-$HOME/.pxpipe}"
+MAX_REQUEST_BYTES="${PXPIPE_MAX_REQUEST_BYTES:-67108864}"
+
+base_name="$(basename -- "$0")"
+if [[ "$base_name" != "pxpipe-wrap" && "$base_name" == p* ]]; then
+  AGENT_CMD="${base_name#p}"
+else
+  if (( $# < 1 )); then
+    echo "Usage: pxpipe-wrap <agent-command> [args...]" >&2
+    exit 2
+  fi
+  AGENT_CMD="$1"
+  shift
+fi
+
+lookup_agent() {
+  local target="$1"
+  local cmd alias_name yolo conflicts routes ports
+  if [[ -r "$AGENTS_TSV" ]]; then
+    while IFS='|' read -r cmd alias_name yolo conflicts routes ports; do
+      [[ -z "$cmd" || "$cmd" == \#* ]] && continue
+      if [[ "$cmd" == "$target" || "$alias_name" == "$target" ]]; then
+        printf '%s|%s|%s|%s|%s|%s\n' "$cmd" "$alias_name" "$yolo" "$conflicts" "$routes" "$ports"
+        return 0
+      fi
+    done < "$AGENTS_TSV"
+  fi
+  case "$target" in
+    agy|pagy)
+      printf '%s\n' "agy|pagy|--dangerously-skip-permissions|--dangerously-skip-permissions|cloudcode-pa.googleapis.com/v1internal:streamGenerateContent*=http://127.0.0.1:47821 cloudcode-pa.googleapis.com/v1internal:generateContent*=http://127.0.0.1:47821|47821"
+      ;;
+    claude|pclaude)
+      printf '%s\n' "claude|pclaude|--dangerously-skip-permissions|--dangerously-skip-permissions --permission-mode --allow-dangerously-skip-permissions||47821"
+      ;;
+    codex|pcodex)
+      printf '%s\n' "codex|pcodex|--yolo|--yolo --dangerously-bypass-approvals-and-sandbox --approve-for-me -a --ask-for-approval|chatgpt.com/backend-api/codex/responses*=http://127.0.0.1:47822 api.openai.com/v1/responses*=http://127.0.0.1:47821|47821 47822"
+      ;;
+    omp|pomp)
+      printf '%s\n' "omp|pomp|--auto-approve|--auto-approve --yolo --approval-mode|api.openai.com/v1/responses*=http://127.0.0.1:47821 api.openai.com/v1/chat/completions*=http://127.0.0.1:47821 chatgpt.com/backend-api/codex/responses*=http://127.0.0.1:47822 cloudcode-pa.googleapis.com/v1internal:streamGenerateContent*=http://127.0.0.1:47821 cloudcode-pa.googleapis.com/v1internal:generateContent*=http://127.0.0.1:47821|47821 47822"
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+entry="$(lookup_agent "$AGENT_CMD")" || {
+  echo "[pxpipe-wrap] unknown or unsupported agent: $AGENT_CMD" >&2
+  exit 2
+}
+
+IFS='|' read -r RESOLVED_CMD _ YOLO_STR CONFLICTS_STR ROUTES_STR PORTS_STR <<< "$entry"
+
+read -r -a YOLO_FLAGS <<< "${YOLO_STR:-}"
+read -r -a CONFLICT_FLAGS <<< "${CONFLICTS_STR:-}"
+read -r -a ROUTES <<< "${ROUTES_STR:-}"
+read -r -a PORTS <<< "${PORTS_STR:-47821}"
+
+port_listening() {
+  local port="$1"
+  (exec 3<>"/dev/tcp/127.0.0.1/$port") 2>/dev/null
+}
+
+ensure_proxy_port() {
+  local port="$1"
+  if port_listening "$port"; then
+    return 0
+  fi
+
+  local unit=""
+  case "$port" in
+    47821) unit="pxpipe.service" ;;
+    47822) unit="pxpipe-chatgpt.service" ;;
+  esac
+
+  if [[ -n "$unit" ]] && command -v systemctl >/dev/null 2>&1; then
+    systemctl --user start "$unit" >/dev/null 2>&1 || true
+    local i
+    for ((i = 0; i < 30; i++)); do
+      if port_listening "$port"; then
+        return 0
+      fi
+      sleep 0.1
+    done
+  fi
+
+  if [[ ! -x "$PXPIPE_BIN" ]]; then
+    PXPIPE_BIN="$(command -v pxpipe 2>/dev/null || true)"
+  fi
+  if [[ -z "$PXPIPE_BIN" || ! -x "$PXPIPE_BIN" ]]; then
+    echo "[pxpipe-wrap] pxpipe binary not found; cannot start proxy on port $port" >&2
+    exit 1
+  fi
+
+  mkdir -p "$STATE_DIR"
+  chmod 700 "$STATE_DIR" 2>/dev/null || true
+  local log_file="$STATE_DIR/pxpipe-${port}.log"
+  if [[ "$port" == "47822" ]]; then
+    PORT="$port" \
+    HOST="127.0.0.1" \
+    OPENAI_UPSTREAM="https://chatgpt.com" \
+    PXPIPE_SESSION_STATE="$STATE_DIR/session-state-chatgpt.json" \
+    PXPIPE_MAX_REQUEST_BYTES="$MAX_REQUEST_BYTES" \
+      nohup "$PXPIPE_BIN" >>"$log_file" 2>&1 </dev/null &
+  else
+    PORT="$port" \
+    HOST="127.0.0.1" \
+    PXPIPE_MAX_REQUEST_BYTES="$MAX_REQUEST_BYTES" \
+      nohup "$PXPIPE_BIN" >>"$log_file" 2>&1 </dev/null &
+  fi
+
+  local i
+  for ((i = 0; i < 50; i++)); do
+    if port_listening "$port"; then
+      return 0
+    fi
+    sleep 0.1
+  done
+
+  echo "[pxpipe-wrap] timed out waiting for pxpipe on 127.0.0.1:$port (see $log_file)" >&2
+  exit 1
+}
+
+has_conflict_flag=false
+if (( ${#CONFLICT_FLAGS[@]} > 0 && $# > 0 )); then
+  for arg in "$@"; do
+    [[ "$arg" == "--" ]] && break
+    for conflict in "${CONFLICT_FLAGS[@]}"; do
+      if [[ "$arg" == "$conflict" || "$arg" == "$conflict="* ]]; then
+        has_conflict_flag=true
+        break 2
+      fi
+    done
+  done
+fi
+
+extra_flags=()
+if [[ "$has_conflict_flag" == "false" && ${#YOLO_FLAGS[@]} -gt 0 ]]; then
+  extra_flags=("${YOLO_FLAGS[@]}")
+fi
+
+if [[ "${PXPIPE_WARPED:-}" == "1" ]]; then
+  exec "$RESOLVED_CMD" "${extra_flags[@]}" "$@"
+fi
+
+for port in "${PORTS[@]}"; do
+  [[ -n "$port" ]] && ensure_proxy_port "$port"
+done
+
+if [[ ! -x "$PXPIPE_BIN" ]]; then
+  PXPIPE_BIN="$(command -v pxpipe 2>/dev/null || true)"
+fi
+if [[ -z "$PXPIPE_BIN" || ! -x "$PXPIPE_BIN" ]]; then
+  echo "[pxpipe-wrap] pxpipe binary not found" >&2
+  exit 1
+fi
+
+route_args=()
+for route in "${ROUTES[@]}"; do
+  [[ -n "$route" ]] && route_args+=(--route "$route")
+done
+
+export PXPIPE_WARPED=1
+exec "$PXPIPE_BIN" warp "${route_args[@]}" -- "$RESOLVED_CMD" "${extra_flags[@]}" "$@"
