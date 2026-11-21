@@ -49,8 +49,7 @@ node "$cliJs" %*
 "@ | Set-Content -Encoding Ascii -Path (Join-Path $binDir "pxpipe.cmd")
 
 @"
-param([Parameter(ValueFromRemainingArguments=`$true)][string[]]`$PassArgs)
-& node "$cliJs" @PassArgs
+& node "$cliJs" @args
 exit `$LASTEXITCODE
 "@ | Set-Content -Encoding UTF8 -Path (Join-Path $binDir "pxpipe.ps1")
 
@@ -96,10 +95,10 @@ foreach ($agent in $manifest.agents) {
         @"
 @echo off
 setlocal
-$psExe -NoProfile -ExecutionPolicy Bypass -File "$wrapScript" -Agent $($agent.command) %*
+$psExe -NoProfile -ExecutionPolicy Bypass -File "$wrapScript" $($agent.command) %*
 "@ | Set-Content -Encoding Ascii -Path $cmdPath
 
-        $aliasesPs1 += "function $($agent.alias) { & `"$wrapScript`" -Agent $($agent.command) @args }"
+        $aliasesPs1 += "function $($agent.alias) { & `"$wrapScript`" $($agent.command) @args }"
         $installedSummary += "$($agent.alias) -> $($agent.command) $($agent.yoloFlags -join ' ')"
     } else {
         if (Test-Path $cmdPath) { Remove-Item -Force $cmdPath }
@@ -157,9 +156,10 @@ if (-not $SkipAutostart) {
         Write-Warning "Scheduled Task registration failed ($($_.Exception.Message)); falling back to Startup VBS."
         $startupDir = [Environment]::GetFolderPath("Startup")
         $vbsPath = Join-Path $startupDir "pxpipe-setup.vbs"
+        $vbsCmd = ("$psExe $taskArg").Replace('"', '""')
         @"
 Set shell = CreateObject("WScript.Shell")
-shell.Run "$psExe $taskArg", 0, False
+shell.Run "$vbsCmd", 0, False
 "@ | Set-Content -Encoding Ascii -Path $vbsPath
         Write-Host "[pxpipe-setup] Wrote Startup launcher: $vbsPath"
     }

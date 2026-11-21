@@ -27,7 +27,9 @@ function Resolve-NodeExe {
     if ($cmd) { return $cmd.Source }
     $candidates = @(
         "$env:ProgramFiles\nodejs\node.exe",
-        "$env:LOCALAPPDATA\Programs\nodejs\node.exe"
+        "$env:LOCALAPPDATA\Programs\nodejs\node.exe",
+        "$env:USERPROFILE\scoop\apps\nodejs-lts\current\node.exe",
+        "$env:USERPROFILE\scoop\apps\nodejs\current\node.exe"
     )
     foreach ($c in $candidates) {
         if (Test-Path $c) { return $c }
@@ -67,28 +69,17 @@ foreach ($port in $Ports) {
         $envJson["PXPIPE_SESSION_STATE"] = (Join-Path $stateDir "session-state-chatgpt.json")
     }
 
-    $spawnSpec = (@{
+    $spawnSpecJson = (@{
         node = $nodeExe
         cli = $cliJs
         log = $logFile
         env = $envJson
     } | ConvertTo-Json -Compress)
+    $spawnSpecB64 = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($spawnSpecJson))
 
-    $js = @'
-const fs = require("node:fs");
-const { spawn } = require("node:child_process");
-const spec = JSON.parse(process.argv[1]);
-const fd = fs.openSync(spec.log, "a");
-const child = spawn(spec.node, [spec.cli], {
-  detached: true,
-  windowsHide: true,
-  stdio: ["ignore", fd, fd],
-  env: { ...process.env, ...spec.env },
-});
-child.unref();
-'@
+    $js = 'const fs=require(''node:fs'');const {spawn}=require(''node:child_process'');const spec=JSON.parse(Buffer.from(process.argv[1],''base64'').toString(''utf8''));const fd=fs.openSync(spec.log,''a'');const child=spawn(spec.node,[spec.cli],{detached:true,windowsHide:true,stdio:[''ignore'',fd,fd],env:{...process.env,...spec.env}});child.unref();'
 
-    & $nodeExe -e $js $spawnSpec | Out-Null
+    & $nodeExe -e $js $spawnSpecB64 | Out-Null
 
     $ready = $false
     for ($i = 0; $i -lt 50; $i++) {

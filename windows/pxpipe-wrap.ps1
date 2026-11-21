@@ -1,10 +1,14 @@
-param(
-    [Parameter(Mandatory = $true)]
-    [string]$Agent,
-
-    [Parameter(ValueFromRemainingArguments = $true)]
-    [string[]]$AgentArgs
-)
+if ($args.Count -eq 0) {
+    throw "Usage: pxpipe-wrap.ps1 <agent> [args...]"
+}
+if ([string]$args[0] -ieq "-Agent") {
+    if ($args.Count -lt 2) { throw "Missing agent name after -Agent." }
+    $Agent = [string]$args[1]
+    $AgentArgs = if ($args.Count -gt 2) { @($args[2..($args.Count - 1)] | ForEach-Object { [string]$_ }) } else { @() }
+} else {
+    $Agent = [string]$args[0]
+    $AgentArgs = if ($args.Count -gt 1) { @($args[1..($args.Count - 1)] | ForEach-Object { [string]$_ }) } else { @() }
+}
 
 $ErrorActionPreference = "Stop"
 
@@ -25,7 +29,12 @@ if (-not $entry) {
 function Resolve-NodeExe {
     $cmd = Get-Command node -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
     if ($cmd) { return $cmd.Source }
-    foreach ($c in @("$env:ProgramFiles\nodejs\node.exe", "$env:LOCALAPPDATA\Programs\nodejs\node.exe")) {
+    foreach ($c in @(
+        "$env:ProgramFiles\nodejs\node.exe",
+        "$env:LOCALAPPDATA\Programs\nodejs\node.exe",
+        "$env:USERPROFILE\scoop\apps\nodejs-lts\current\node.exe",
+        "$env:USERPROFILE\scoop\apps\nodejs\current\node.exe"
+    )) {
         if (Test-Path $c) { return $c }
     }
     throw "Node.js not found on PATH."
@@ -126,6 +135,17 @@ foreach ($r in $entry.routes) {
 $warpArgs += "--"
 $warpArgs += $childCommand
 
-$env:PXPIPE_WARPED = "1"
-& $nodeExe @warpArgs
-exit $LASTEXITCODE
+$prevWarped = $env:PXPIPE_WARPED
+$exitCode = 0
+try {
+    $env:PXPIPE_WARPED = "1"
+    & $nodeExe @warpArgs
+    $exitCode = $LASTEXITCODE
+} finally {
+    if ($null -eq $prevWarped) {
+        Remove-Item Env:PXPIPE_WARPED -ErrorAction SilentlyContinue
+    } else {
+        $env:PXPIPE_WARPED = $prevWarped
+    }
+}
+exit $exitCode
