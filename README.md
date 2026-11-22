@@ -28,6 +28,31 @@ Only CLIs that are **actually installed** on the machine get `p*` aliases/shims 
 
 > **Note on other CLIs (e.g. `devin`, `mcode`):** Tools whose backends use proprietary non-Anthropic/OpenAI/Google wire protocols or unsupported models (`devin` → `api.devin.ai`, `mcode` → MiniMax M3) are intentionally left untouched because `pxpipe` cannot transform their traffic.
 
+### Multi-Account Claude Code (`cdev`/`pcdev`, `cvex`/`pcvex`, `cpro`/`pcpro`)
+
+When `claude` is installed, the installer also sets up isolated aliases for three Claude accounts plus the `claude-accounts` helper:
+
+| Account | Direct Alias (no pxpipe) | `pxpipe` Alias (cost-saving) | Default Flags Added |
+| --- | --- | --- | --- |
+| `dev` | `cdev` | `pcdev` | `--dangerously-skip-permissions` |
+| `vex` | `cvex` | `pcvex` | `--dangerously-skip-permissions` |
+| `pro` | `cpro` | `pcpro` | `--dangerously-skip-permissions` |
+
+- **Per-PC default binding**: On each machine, whichever account is already logged in at `~/.claude` stays there untouched (`CLAUDE_CONFIG_DIR` is kept unset so Claude continues reading `~/.claude.json`), while the other two accounts use isolated directories under `~/.claude-profiles/<name>`. The binding is stored locally per machine in `~/.config/pxpipe-setup/claude-accounts.local.json`.
+- **Settings**: `~/.claude/settings.json` is copied into newly created `~/.claude-profiles/<name>/settings.json` automatically; run `claude-accounts sync-settings --force` any time to re-sync settings.
+
+Quick setup commands on a new PC:
+
+```bash
+claude-accounts status                 # inspect current bindings and login status
+claude-accounts setup                  # interactive wizard to bind ~/.claude & log in
+claude-accounts set-default vex        # e.g. on a PC where 'vex' is the default ~/.claude
+claude-accounts login all              # log in to any logged-out accounts
+claude-accounts sync-settings --force  # overwrite settings.json across profiles from ~/.claude
+```
+
+You can also pre-select the default account during installation via `bash linux/install.sh --default-claude-account vex` or `windows\install.ps1 -DefaultClaudeAccount vex`.
+
 ### Default Model Scope (`~/.config/pxpipe/config.json`)
 
 [`config/pxpipe-config.json`](config/pxpipe-config.json) enables:

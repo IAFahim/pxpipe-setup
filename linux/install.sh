@@ -10,25 +10,39 @@ PXPIPE_STATE_DIR="$HOME/.pxpipe"
 SYSTEMD_USER_DIR="$HOME/.config/systemd/user"
 FISH_CONF_DIR="$HOME/.config/fish/conf.d"
 FORCE_CONFIG=false
+DEFAULT_CLAUDE_ACCOUNT=""
 
-for arg in "$@"; do
-  case "$arg" in
+while (( $# > 0 )); do
+  case "$1" in
     --force-config) FORCE_CONFIG=true ;;
+    --default-claude-account)
+      if (( $# < 2 )); then
+        echo "Missing value for --default-claude-account" >&2
+        exit 2
+      fi
+      DEFAULT_CLAUDE_ACCOUNT="$2"
+      shift
+      ;;
+    --default-claude-account=*)
+      DEFAULT_CLAUDE_ACCOUNT="${1#*=}"
+      ;;
     -h|--help)
       cat <<'EOF'
-Usage: linux/install.sh [--force-config]
+Usage: linux/install.sh [--force-config] [--default-claude-account <dev|vex|pro|none>]
 
 Installs pxpipe-proxy, creates p-prefixed aliases and ~/.local/bin shims for
-all installed pxpipe-supported AI CLIs, configures systemd user services, and
+all installed pxpipe-supported AI CLIs plus multi-account Claude aliases
+(cdev/cvex/cpro, pcdev/pcvex/pcpro), configures systemd user services, and
 writes ~/.config/pxpipe/config.json if missing (or with --force-config).
 EOF
       exit 0
       ;;
     *)
-      echo "Unknown option: $arg" >&2
+      echo "Unknown option: $1" >&2
       exit 2
       ;;
   esac
+  shift
 done
 
 find_node() {
@@ -91,6 +105,44 @@ chmod +x "$BIN_DIR/pxpipe"
 
 cp "$REPO_DIR/bin/pxpipe-wrap" "$BIN_DIR/pxpipe-wrap"
 chmod +x "$BIN_DIR/pxpipe-wrap"
+
+cp "$REPO_DIR/config/claude-accounts.json" "$SETUP_CONFIG_DIR/claude-accounts.json"
+cp "$REPO_DIR/bin/claude-accounts.mjs" "$SETUP_CONFIG_DIR/claude-accounts.mjs"
+chmod +x "$SETUP_CONFIG_DIR/claude-accounts.mjs"
+
+cat > "$BIN_DIR/claude-accounts" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+SCRIPT="${PXPIPE_SETUP_CONFIG_DIR:-$HOME/.config/pxpipe-setup}/claude-accounts.mjs"
+if [[ ! -f "$SCRIPT" ]]; then
+  echo "[claude-accounts] missing $SCRIPT — re-run pxpipe-setup linux/install.sh" >&2
+  exit 1
+fi
+find_node() {
+  if command -v node >/dev/null 2>&1; then
+    command -v node
+    return 0
+  fi
+  local candidate
+  for candidate in \
+    "$HOME/.local/share/mise/installs/node/latest/bin/node" \
+    /usr/local/bin/node \
+    /usr/bin/node; do
+    if [[ -x "$candidate" ]]; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+  return 1
+}
+NODE_BIN="$(find_node)" || { echo "[claude-accounts] node not found on PATH" >&2; exit 1; }
+base_name="$(basename -- "$0")"
+if [[ "$base_name" != "claude-accounts" ]]; then
+  exec "$NODE_BIN" "$SCRIPT" --invoked-as "$base_name" "$@"
+fi
+exec "$NODE_BIN" "$SCRIPT" "$@"
+EOF
+chmod +x "$BIN_DIR/claude-accounts"
 
 if [[ "$FORCE_CONFIG" == "true" || ! -f "$PXPIPE_CONFIG_DIR/config.json" ]]; then
   cp "$REPO_DIR/config/pxpipe-config.json" "$PXPIPE_CONFIG_DIR/config.json"
@@ -169,6 +221,39 @@ while IFS='|' read -r cmd alias_name yolo _ _ _; do
   fi
 done < "$SETUP_CONFIG_DIR/agents.tsv"
 
+claude_installed=false
+if is_agent_installed "claude"; then
+  claude_installed=true
+fi
+
+while IFS='|' read -r acc_name acc_alias acc_pxpipe; do
+  [[ -z "$acc_name" ]] && continue
+  if [[ "$claude_installed" == "true" ]]; then
+    ln -sfn "$BIN_DIR/claude-accounts" "$BIN_DIR/$acc_alias"
+    ln -sfn "$BIN_DIR/claude-accounts" "$BIN_DIR/$acc_pxpipe"
+    printf "alias %s='claude-accounts run %s'\n" "$acc_alias" "$acc_name" >> "$aliases_sh"
+    printf "alias %s='claude-accounts run --pxpipe %s'\n" "$acc_pxpipe" "$acc_name" >> "$aliases_sh"
+    if [[ -n "$fish_tmp" ]]; then
+      fish_tmp+="function $acc_alias --wraps=claude --description 'Run claude [$acc_name, direct] (--dangerously-skip-permissions)'"$'\n'
+      fish_tmp+="    claude-accounts run $acc_name \$argv"$'\n'
+      fish_tmp+="end"$'\n'
+      fish_tmp+="function $acc_pxpipe --wraps=claude --description 'Run claude [$acc_name, pxpipe] (--dangerously-skip-permissions)'"$'\n'
+      fish_tmp+="    claude-accounts run --pxpipe $acc_name \$argv"$'\n'
+      fish_tmp+="end"$'\n'
+    fi
+    installed_summary+=("$acc_alias -> claude [$acc_name, direct] --dangerously-skip-permissions")
+    installed_summary+=("$acc_pxpipe -> claude [$acc_name, pxpipe] --dangerously-skip-permissions")
+  else
+    rm -f "$BIN_DIR/$acc_alias" "$BIN_DIR/$acc_pxpipe"
+  fi
+done < <("$NODE_BIN" -e '
+const fs = require("node:fs");
+const data = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+for (const a of data.accounts) {
+  console.log(`${a.name}|${a.alias}|${a.pxpipeAlias}`);
+}
+' "$SETUP_CONFIG_DIR/claude-accounts.json")
+
 if [[ -d "$FISH_CONF_DIR" ]]; then
   printf '%s' "$fish_tmp" > "$fish_file"
 fi
@@ -212,3 +297,11 @@ echo "[pxpipe-setup] Installed p-aliases:"
 for item in "${installed_summary[@]}"; do
   echo "  - $item"
 done
+
+if [[ "$claude_installed" == "true" ]]; then
+  if [[ -n "$DEFAULT_CLAUDE_ACCOUNT" ]]; then
+    "$BIN_DIR/claude-accounts" auto-init --default "$DEFAULT_CLAUDE_ACCOUNT"
+  else
+    "$BIN_DIR/claude-accounts" auto-init
+  fi
+fi

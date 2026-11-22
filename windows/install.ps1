@@ -1,6 +1,7 @@
 ﻿param(
     [switch]$ForceConfig,
-    [switch]$SkipAutostart
+    [switch]$SkipAutostart,
+    [string]$DefaultClaudeAccount
 )
 
 $ErrorActionPreference = "Stop"
@@ -54,8 +55,23 @@ exit `$LASTEXITCODE
 "@ | Set-Content -Encoding UTF8 -Path (Join-Path $binDir "pxpipe.ps1")
 
 Copy-Item -Force (Join-Path $repoDir "config\agents.json") (Join-Path $setupDir "agents.json")
+Copy-Item -Force (Join-Path $repoDir "config\claude-accounts.json") (Join-Path $setupDir "claude-accounts.json")
+Copy-Item -Force (Join-Path $repoDir "bin\claude-accounts.mjs") (Join-Path $setupDir "claude-accounts.mjs")
 Copy-Item -Force (Join-Path $repoDir "windows\pxpipe-wrap.ps1") (Join-Path $setupDir "pxpipe-wrap.ps1")
 Copy-Item -Force (Join-Path $repoDir "windows\start-pxpipe.ps1") (Join-Path $setupDir "start-pxpipe.ps1")
+
+$accountsScript = Join-Path $setupDir "claude-accounts.mjs"
+
+@"
+@echo off
+setlocal
+node "$accountsScript" %*
+"@ | Set-Content -Encoding Ascii -Path (Join-Path $binDir "claude-accounts.cmd")
+
+@"
+& node "$accountsScript" @args
+exit `$LASTEXITCODE
+"@ | Set-Content -Encoding UTF8 -Path (Join-Path $binDir "claude-accounts.ps1")
 
 $pxpipeConfigTarget = Join-Path $pxpipeConfigDir "config.json"
 if ($ForceConfig -or -not (Test-Path $pxpipeConfigTarget)) {
@@ -102,6 +118,34 @@ $psExe -NoProfile -ExecutionPolicy Bypass -File "$wrapScript" $($agent.command) 
         $installedSummary += "$($agent.alias) -> $($agent.command) $($agent.yoloFlags -join ' ')"
     } else {
         if (Test-Path $cmdPath) { Remove-Item -Force $cmdPath }
+    }
+}
+
+$claudeInstalled = Test-WindowsAgentInstalled -CommandName "claude"
+$accountsManifest = Get-Content -Raw -Path (Join-Path $setupDir "claude-accounts.json") | ConvertFrom-Json
+foreach ($acc in $accountsManifest.accounts) {
+    $directCmdPath = Join-Path $binDir "$($acc.alias).cmd"
+    $pxpipeCmdPath = Join-Path $binDir "$($acc.pxpipeAlias).cmd"
+    if ($claudeInstalled) {
+        @"
+@echo off
+setlocal
+node "$accountsScript" run $($acc.name) %*
+"@ | Set-Content -Encoding Ascii -Path $directCmdPath
+
+        @"
+@echo off
+setlocal
+node "$accountsScript" run --pxpipe $($acc.name) %*
+"@ | Set-Content -Encoding Ascii -Path $pxpipeCmdPath
+
+        $aliasesPs1 += "function $($acc.alias) { & node `"$accountsScript`" run $($acc.name) @args }"
+        $aliasesPs1 += "function $($acc.pxpipeAlias) { & node `"$accountsScript`" run --pxpipe $($acc.name) @args }"
+        $installedSummary += "$($acc.alias) -> claude [$($acc.name), direct] --dangerously-skip-permissions"
+        $installedSummary += "$($acc.pxpipeAlias) -> claude [$($acc.name), pxpipe] --dangerously-skip-permissions"
+    } else {
+        if (Test-Path $directCmdPath) { Remove-Item -Force $directCmdPath }
+        if (Test-Path $pxpipeCmdPath) { Remove-Item -Force $pxpipeCmdPath }
     }
 }
 
@@ -170,4 +214,15 @@ Write-Host "[pxpipe-setup] Dashboard: http://127.0.0.1:47821/"
 Write-Host "[pxpipe-setup] Installed p-aliases:"
 foreach ($item in $installedSummary) {
     Write-Host "  - $item"
+}
+
+if ($claudeInstalled) {
+    if ($DefaultClaudeAccount) {
+        & $nodeCmd.Source $accountsScript auto-init --default $DefaultClaudeAccount
+    } else {
+        & $nodeCmd.Source $accountsScript auto-init
+    }
+    if ($LASTEXITCODE -ne 0) {
+        throw "claude-accounts auto-init failed."
+    }
 }

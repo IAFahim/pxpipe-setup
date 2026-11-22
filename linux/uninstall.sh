@@ -19,7 +19,21 @@ if [[ -r "$SETUP_CONFIG_DIR/agents.tsv" ]]; then
   done < "$SETUP_CONFIG_DIR/agents.tsv"
 fi
 
-rm -f "$BIN_DIR/pxpipe-wrap" "$BIN_DIR/pxpipe" "$FISH_FILE"
+if [[ -r "$SETUP_CONFIG_DIR/claude-accounts.json" ]] && command -v node >/dev/null 2>&1; then
+  while IFS= read -r acc_cmd; do
+    [[ -n "$acc_cmd" ]] && rm -f "$BIN_DIR/$acc_cmd"
+  done < <(node -e '
+const fs = require("node:fs");
+const data = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+for (const a of data.accounts || []) {
+  if (a.alias) console.log(a.alias);
+  if (a.pxpipeAlias) console.log(a.pxpipeAlias);
+}
+' "$SETUP_CONFIG_DIR/claude-accounts.json" 2>/dev/null || true)
+fi
+
+rm -f "$BIN_DIR/cdev" "$BIN_DIR/cvex" "$BIN_DIR/cpro" "$BIN_DIR/pcdev" "$BIN_DIR/pcvex" "$BIN_DIR/pcpro"
+rm -f "$BIN_DIR/claude-accounts" "$BIN_DIR/pxpipe-wrap" "$BIN_DIR/pxpipe" "$FISH_FILE"
 rm -rf "$SETUP_CONFIG_DIR"
 
 strip_rc_block() {
@@ -43,4 +57,4 @@ strip_rc_block "$HOME/.bashrc"
 strip_rc_block "$HOME/.zshrc"
 
 echo "[pxpipe-setup] Uninstalled wrappers, aliases, and services."
-echo "[pxpipe-setup] Note: ~/.local/share/pxpipe, ~/.config/pxpipe, and ~/.pxpipe were preserved."
+echo "[pxpipe-setup] Note: ~/.local/share/pxpipe, ~/.config/pxpipe, ~/.pxpipe, ~/.claude, and ~/.claude-profiles were preserved."

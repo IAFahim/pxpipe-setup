@@ -9,7 +9,7 @@ This document is written for **AI agents running on Windows** to mirror the Linu
 ```text
 Clone https://github.com/IAFahim/pxpipe-setup.git (for example into $HOME\GitHub\pxpipe-setup), read WINDOWS_HANDOFF.md and windows\install.ps1, and set up pxpipe on this Windows PC:
 1. Ensure Node.js >= 22.15 is installed (required on Windows so pxpipe warp can export Windows root certificates via tls.getCACertificates('system')).
-2. Run windows\install.ps1 to install pxpipe-proxy, start the local pxpipe background proxies on 127.0.0.1:47821 and 127.0.0.1:47822, and wire p-prefixed commands/functions (pagy, pclaude, pcodex, pomp, plus any other installed pxpipe-supported AI CLIs like gemini, opencode, cursor-agent, kilo, pi) with their full auto-approve/yolo flags.
+2. Run windows\install.ps1 to install pxpipe-proxy, start the local pxpipe background proxies on 127.0.0.1:47821 and 127.0.0.1:47822, and wire p-prefixed commands/functions (pagy, pclaude, pcodex, pomp, plus multi-account Claude aliases cdev/pcdev, cvex/pcvex, cpro/pcpro and any other installed pxpipe-supported AI CLIs like gemini, opencode, cursor-agent, kilo, pi) with their full auto-approve/yolo flags.
 3. Verify any Windows-installed AI CLIs not on the default PATH (e.g. winget, scoop, AppData, ~/.local/bin, npm global) are detected and wrapped properly (handling .exe vs .cmd/.ps1 shims).
 4. Verify ports 47821 and 47822 are listening, http://127.0.0.1:47821/ responds 200, and run non-destructive smoke tests (--version / --help) on every installed p<cli> alias in both PowerShell and cmd.exe.
 ```
@@ -103,6 +103,7 @@ Clone https://github.com/IAFahim/pxpipe-setup.git (for example into $HOME\GitHub
    - `pcursor-agent` → `cursor-agent --yolo --trust`
    - `pkilo` → `kilo --auto`
    - `ppi` → `pi`
+   - `cdev` / `pcdev`, `cvex` / `pcvex`, `cpro` / `pcpro` → isolated Claude Code account wrappers (all add `--dangerously-skip-permissions`; `pc*` routes through `pxpipe warp`, `c*` connects directly). Run `claude-accounts status` or `claude-accounts setup` to check/bind which account owns `%USERPROFILE%\.claude` on that PC.
 
 ---
 

@@ -1,0 +1,23 @@
+{
+  "profilesDir": ".claude-profiles",
+  "accounts": [
+    {
+      "name": "dev",
+      "alias": "cdev",
+      "pxpipeAlias": "pcdev",
+      "matchTokens": ["dev"]
+    },
+    {
+      "name": "vex",
+      "alias": "cvex",
+      "pxpipeAlias": "pcvex",
+      "matchTokens": ["vex"]
+    },
+    {
+      "name": "pro",
+      "alias": "cpro",
+      "pxpipeAlias": "pcpro",
+      "matchTokens": ["pro"]
+    }
+  ]
+}
